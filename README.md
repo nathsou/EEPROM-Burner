@@ -36,7 +36,23 @@ My breadboard implementation is quite bushy right now, I'm planning on designing
 
 One can read from or read to the EEPROM using a simple node.js CLI.
 
-![CLI Usage](res/cli-usage.png)
+```console
+  Usage: eeprom [options]
+
+  Options:
+
+    -V, --version               output the version number
+    -p, --port [port]           The Arduino's Serial Port
+    -r, --read [file]           Read data from EEPROM into file, prints to stdout if no file provided
+    -w, --write [file]          Write a file to the EEPROM, uses -data if no file provided
+    -b, --bin                   Use binary data, defaults to hexadecimal
+    -f, --fill [number]         fill [start] to [start] + [length] with [number], defaults to 0
+    -s, --start-address [addr]  Start address of read or write
+    -l, --length [addr]         Number of bytes to read / fill
+    -d, --data [string]         Data used for a write if no file is provided
+    -v, --verbose               enables logging
+    -h, --help                  output usage information
+```
 
 ## Communication Protocol
 

@@ -1,8 +1,8 @@
 const fs = require('fs');
 
-STATE =  {'IDLE': 0, 'READING': 1, 'WRITING': 2}; 
+STATE =  {'IDLE': 0, 'READING': 1, 'WRITING': 2, 'ERROR' : 3}; 
 
-class AT28C256BurnerUtil { //compatible with [AT, ST, ACT]28C[16, 64, 256]
+class BurnerUtil { //compatible with [AT, ST, ACT]28C[16, 64, 256]
 
     constructor(port, on_error, on_msg, exit_on_empty_queue = true) {
         this.state = STATE.IDLE;
@@ -11,11 +11,16 @@ class AT28C256BurnerUtil { //compatible with [AT, ST, ACT]28C[16, 64, 256]
         this.repeat_limit = 3;
         this.repeat_interval = 1500;
         this.exit_on_empty_queue = exit_on_empty_queue;
-        this.pong_received = false;
         this.on_msg_cb = on_msg;
-        this.o_error_cb = on_error;
+        this.on_error_cb = on_error;
 
         this.port.on('data', data => this.onData(data));
+    }
+
+    log(msg) {
+        if (this.on_msg_cb !== undefined) {
+            this.on_msg_cb.call(null, msg);
+        }
     }
 
     formatNumber(num, fill_zeroes) {
@@ -52,12 +57,11 @@ class AT28C256BurnerUtil { //compatible with [AT, ST, ACT]28C[16, 64, 256]
         let cmd = this.queue[0];
         this.repeat_cmd = () => {
             if (this.repeat_count++ > this.repeat_limit) {
-                this.processFatalError('Serial port not responding.');
+                this.error('Serial port not responding.');
             } 
             this.port.write(this.formatCommand(cmd), 'ascii', err => {
-                this.state = cmd.state;
+                //this.state = cmd.state;
                 this.last_cmd = cmd;
-                this.pong_received = false;
                 //console.log(`cmd: ${this.formatCommand(cmd)}`)
                 if (err) throw new Error(err);
             });
@@ -71,7 +75,7 @@ class AT28C256BurnerUtil { //compatible with [AT, ST, ACT]28C[16, 64, 256]
     }
  
     sendCommand(cmd) {
-        //console.log(`Added task ${this.formatCommand(cmd).replace(/\n/g, '')} in queue`);
+        this.log(`Added task ${this.formatCommand(cmd).replace(/\n/g, '')} in queue`);
         this.queue.push(cmd);
         if (this.queue.length === 1) {
             this.nextCommand();
@@ -88,11 +92,11 @@ class AT28C256BurnerUtil { //compatible with [AT, ST, ACT]28C[16, 64, 256]
         }
     }
 
-    processFatalError(msg) {
+    error(msg) {
         if (this.on_error_cb !== undefined) {
             this.on_error_cb.call(null, msg);
         } else {
-            console.error('Fatal Error: ' + msg);
+            console.error(msg);
             process.exit(1);
         }
     }
@@ -104,17 +108,14 @@ class AT28C256BurnerUtil { //compatible with [AT, ST, ACT]28C[16, 64, 256]
         this.wstream.write(buffer);
     }
 
-    processRead(str, buffer) {
-        if (!this.pong_received && (str.length >= 9 && str.slice(0, 9) === 'beginRead')) {
-            //console.log('Read pong received: ' + str);
-            
-            this.stopRepeating();
-            //console.log('Pong is valid!');
-            this.pong_received = true; //prevents catching strings beginning with 'r' or 'R'
-            return;
-            
-        } else if (str[str.length - 1] === '%') {
-            //console.log('Data successfully read');
+    beginRead() {
+        this.state = STATE.READING;
+        this.stopRepeating();
+    }
+
+    processReadData(str, buffer) {
+        if (str[str.length - 1] === '%') {
+            this.log('Data successfully read');
             this.nextCommand();
         } else {
             if (this.last_cmd.file_name !== undefined) {
@@ -129,28 +130,45 @@ class AT28C256BurnerUtil { //compatible with [AT, ST, ACT]28C[16, 64, 256]
         }
     }
 
-    processWrite(str, buffer) {
+    beginWrite() {
+        this.state = STATE.WRITING;
+        this.stopRepeating();
+        //send data
+        if (this.last_cmd.buffer !== undefined) { //Buffer mode
+            this.port.write(this.last_cmd.buffer);
+        } else if (this.last_cmd.file_name !== undefined) {
+            this.rstream = fs.createReadStream(this.last_cmd.file_name, {highWaterMark: 1024});
+            this.rstream.on('data', buffer => {
+                this.port.write(buffer);
+            }).on('end', () => {
+                this.rstream = undefined;
+            });
+        } else {
+            this.error('Invalid pong.');
+        }
+    }
+ 
+    processWriteData(str, buffer) {
         //console.log('received: ' + str);
 
-        if (!this.pong_received && (str.length >= 10 && str.slice(0, 10) === 'beginWrite')) {
-            this.stopRepeating();
-            this.pong_received = true;
-            //send data
-            if (this.last_cmd.buffer !== undefined) { //Buffer mode
-                this.port.write(this.last_cmd.buffer);
-            } else if (this.last_cmd.file_name !== undefined) {
-                this.rstream = fs.createReadStream(this.last_cmd.file_name, {highWaterMark: 1024});
-                this.rstream.on('data', buffer => {
-                    this.port.write(buffer);
-                }).on('end', () => {
-                    this.rstream = undefined;
-                });
-            } else {
-                console.error('Invalid pong.');
-            }
-        } else if (str[str.length - 1] === '%') {
-            //console.log('Data successfully written');
+        if (str[str.length - 1] === '%') {
+            this.log('Data successfully written');
             this.nextCommand();
+        }
+    }
+
+    beginError(str, data) {
+        this.state = STATE.ERROR;
+        this.stopRepeating();
+    }
+
+    processErrorData(str, data) {
+        if (str[str.length - 1] === '%') {
+            this.error(this.error_msg);
+            this.error_msg = undefined;
+            this.nextCommand();
+        } else { //it's the error message
+            this.error_msg = this.error_msg === undefined ? str : this.error_msg + str;
         }
     }
 
@@ -184,25 +202,53 @@ class AT28C256BurnerUtil { //compatible with [AT, ST, ACT]28C[16, 64, 256]
     }
 
     handleBuffer(str, data) {
-        switch (this.state) {
-            case STATE.READING:
-                this.processRead(str, data);
-                break;
 
-            case STATE.WRITING:
-                this.processWrite(str, data);
-                break;
-            
-            default:
-                console.error(`Unhandled data: ${str}`);
-                break;
+        if (this.state === undefined || this.state === STATE.IDLE) {
+            switch (str) {
+                case 'beginRead':
+                    this.beginRead();
+                    break;
+                
+                case 'beginWrite':
+                    this.beginWrite();
+                    break;
+                
+                case 'beginError':
+                    this.beginError();
+                    break;
+
+                default:
+                    this.state = STATE.IDLE;
+                    break;
+            }
+        } else {
+            switch (this.state) {
+                case STATE.READING:
+                    this.processReadData(str, data);
+                    break;
+
+                case STATE.WRITING:
+                    this.processWriteData(str, data);
+                    break;
+                
+                case STATE.ERROR:
+                    this.processErrorData(str, data);
+                    break;
+
+                default:
+                    this.error(`Unhandled data: ${str}`);
+                    break;
+            }
         }
+
     }
 }
 
+//Supported chips and their capacity (in bytes)
+
 class Burner {
     constructor(port, on_error, on_msg) {
-        this.util = new AT28C256BurnerUtil(port, on_error, on_msg);
+        this.util = new BurnerUtil(port, on_error, on_msg);
         this.hex = true;
     }
 
@@ -242,12 +288,20 @@ class Burner {
     }
 
     writeFile(addr, file_name) {
+        const len = fs.statSync(file_name)['size'];
+
         this.util.sendCommand({
             state: STATE.WRITING,
             cmd: this.hex ? 'W' : 'w',
-            args: [addr, fs.statSync(file_name)['size']],
+            args: [addr, len],
             file_name: file_name
         });
+    }
+
+    fill(addr, length, nb) {
+        let buf = new Buffer(length);
+        buf.fill(nb);
+        this.writeBuffer(addr, buf);
     }
 
 }

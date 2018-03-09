@@ -1,29 +1,30 @@
 #!/usr/bin/env node
  
 const SerialPort = require('serialport');
-const Burner = require('../lib/AT28C256-burner.js');
+const Burner = require('../lib/burner.js');
 const cli = require('commander');
 const chalk = require('chalk');
 const inquirer = require('inquirer');
 const camelCase = require('camelcase');
 
+
 cli
-  .version('0.1.0')
+  .version('0.0.4')
   .option('-p, --port [port]', "The Arduino's Serial Port")
-  .option('-v, --verbose', 'Verbose mode')
-  .option('-b, --bin', 'Use binary data')
-  .option('-h, --hex', 'Use hexadecimal data (Intel HEX)')
   .option('-r, --read [file]', 'Read data from EEPROM into file, prints to stdout if no file provided')
   .option('-w, --write [file]', 'Write a file to the EEPROM, uses -data if no file provided')
-  .option('-s, --start-address [addr]', 'Start address of read or write', parseStr)
-  .option('-l, --read-length [addr]', 'Number of bytes to read', parseStr)
+  .option('-b, --bin', 'Use binary data, defaults to hexadecimal')
+  .option('-f, --fill [number]', "fill [start] to [start] + [length] with [number], defaults to 0", parseNum)
+  .option('-s, --start-address [addr]', 'Start address of read or write', parseNum)
+  .option('-l, --length [addr]', 'Number of bytes to read / fill', parseNum)
   .option('-d, --data [string]', 'Data used for a write if no file is provided')
+  .option('-v, --verbose', 'enables logging')
   .parse(process.argv);
 
 parseCLI(cli);
 
 //Allows binary, octal, hexadecimal or decimal to be used
-function parseStr(str) {
+function parseNum(str) {
     const bases = {'0b': 2, '0o': 8, '0x': 16};
     const prefix = str.slice(0, 2);
 
@@ -65,9 +66,9 @@ function getSerialPort(cli) {
 
 async function parseCLI(cli) {
 
-    if (!cli.read && !cli.write) {
-        console.log(chalk.yellow('No operation to perform, use --help to see usage'));
-        process.exit(0);
+    if (!cli.read && !cli.write && !cli.fill) {
+        console.log(chalk.yellow(chalk.bold('No operation to perform, use --help to see usage')));
+        return;
     }
 
     try {
@@ -76,10 +77,12 @@ async function parseCLI(cli) {
         });
 
         let eeprom = new Burner(port, err => {
-            console.log(chalk.red(err));
+            console.log(chalk.red(chalk.bold(err)));
             process.exit(1);
         }, msg => {
-            console.log(chalk.blue(msg));
+            if (cli.hasOwnProperty('verbose')) {
+                console.log(chalk.blue(msg));
+            }
         });
 
         if (cli.hex) {
@@ -91,8 +94,10 @@ async function parseCLI(cli) {
         port.on('open', () => {
             if (cli.read) {
                 read(eeprom, cli);
-            } else {
+            } else if (cli.write) {
                 write(eeprom, cli);
+            } else if (cli.fill) {
+                fill(eeprom, cli);
             }
         });
     } catch (err) {
@@ -121,7 +126,7 @@ function getOptionDescription(option, cli) {
 function ensureOption(option, cli, parser = v => v) {
     option = camelCase(option);
     return new Promise((resolve, reject) => {
-        if (cli.hasOwnProperty(option)) {
+        if (cli.hasOwnProperty(option) && typeof cli[option] !== 'boolean') {
             resolve(cli[option]);
             return;
         }
@@ -139,8 +144,8 @@ function ensureOption(option, cli, parser = v => v) {
 }
 
 async function read(eeprom, cli) {
-        const addr = await ensureOption('start-address', cli, parseStr),
-        len = await ensureOption('read-length', cli, parseStr),
+        const addr = await ensureOption('start-address', cli, parseNum),
+            len = await ensureOption('length', cli, parseNum),
         file_name = cli['read'];
 
         if (typeof file_name === 'boolean') {
@@ -153,7 +158,7 @@ async function read(eeprom, cli) {
 }
 
 async function write(eeprom, cli) {
-    const addr = await ensureOption('start-address', cli, parseStr),
+    const addr = await ensureOption('start-address', cli, parseNum),
         file_name = cli['write'];
 
     if (typeof file_name === 'boolean') {
@@ -162,6 +167,13 @@ async function write(eeprom, cli) {
     } else {
         eeprom.writeFile(addr, file_name);
     }
+}
+
+async function fill(eeprom, cli) {
+    const nb = typeof cli['fill'] === 'number' ? cli['fill'] : 0;
+    const addr = await ensureOption('start-address', cli, parseNum),
+        len = await ensureOption('length', cli, parseNum);
+    eeprom.fill(addr, len, nb);
 }
 
 process.on('unhandledRejection', err => { 

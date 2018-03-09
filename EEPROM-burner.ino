@@ -20,20 +20,26 @@
     COMMUNICATION PROTOCOL
 
  ****************************************************************/
- 
+
 /*
- * There are two formats available: binary and hexadecimal which represents the data as ascii characters
- * The Arduino receives commands from an external controller or master communicating at 115200 bauds via serial 
- * Four commands are currently implemented: Read in binary : 'r', Read in hex : 'R', Write in binary : 'w' and Write in hex : 'W'
- * Each command is represented by a string with the following format: ['W' || 'w' || 'R' || 'r'],addr,length
- * The address and length are 4 hexadecimal digits, so to read the 256 first bytes in rom, one would call 'R,0000,00ff'
- *                                                    
- * Once a command has been received, a confirmation is sent : "BeginRead\0" for a read command and "BeginWrite"\0 for a write command
- * To signal the end of a command, the character '%' is sent. A new command can then be issued.
- */
+   There are two formats available: binary and hexadecimal which represents the data as ascii characters
+   The Arduino receives commands from an external controller or master communicating at 115200 bauds via serial
+   Four commands are currently implemented: Read in binary : 'r', Read in hex : 'R', Write in binary : 'w' and Write in hex : 'W'
+   Each command is represented by a string with the following format: ['W' || 'w' || 'R' || 'r'],addr,length
+   The address and length are 4 hexadecimal digits, so to read the 256 first bytes in rom, one would call 'R,0000,00ff'
+
+   Once a command has been received, a confirmation is sent : "BeginRead\0" for a read command and "BeginWrite"\0 for a write command
+   To signal the end of a command, the character '%' is sent. A new command can then be issued.
+*/
+
+//Important parameters:
+
+#define EEPROM_CAPACITY 32768 //bytes -> AT28C256, change according to your chip
+#define BAUD_RATE 115200
+
 
 #define FORCE_INLINE __attribute__((always_inline))
-#define BAUD_RATE 115200
+
 // 74595 shit registers pins
 #define DS      A0
 #define LATCH   A1
@@ -341,15 +347,30 @@ byte parseCommand() {
     case 'w':
       retval = WRITE_BIN;
       break;
-    case 'V':
-      retval = VERSION;
-      break;
     default:
       retval = NOCOMMAND;
       break;
   }
 
   return retval;
+}
+
+/*
+ * Check the requested data can be accessed
+ * global variables startAddress and dataLength must be set beforehand 
+ */
+
+boolean checkCapacity() {
+  if (startAddress + dataLength > EEPROM_CAPACITY -1) {
+    //send an error message
+    Serial.print("beginError");
+    Serial.write('\0');
+    Serial.print("Boundary Error: Cannot access byte at address " + String(startAddress + dataLength) + " on a " + String(EEPROM_CAPACITY) + " EEPROM chip");
+    Serial.write('%');
+    return false;
+  }
+
+  return true;
 }
 
 /************************************************************
@@ -407,14 +428,14 @@ unsigned int hexWord(char* data) {
    @param to         last address to read from
    @param linelength how many hex values are written in one line
  **/
-void read_block(unsigned int from, unsigned int dataLength, int linelength) {
+void read_block(unsigned int address, unsigned int dataLength, int linelength) {
   //Serial.println("from: " + String(from) + ", to: " + String(to));
   //count the number fo values that are already printed out on the
   //current line
   int outcount = 0;
   //loop from "from address" to "to address" (included)
-  unsigned int addr = from;
-  for (unsigned int i = 0; i <= dataLength; i++, addr++) {
+  unsigned int end_address = min(address + dataLength, EEPROM_CAPACITY);
+  for (unsigned int addr = address; addr < end_address; addr++) {
     if (outcount == 0) {
       //print out the address at the beginning of the line
       Serial.println();
@@ -440,6 +461,7 @@ void read_block(unsigned int from, unsigned int dataLength, int linelength) {
    @param to         last address to read from
  **/
 void read_binblock(unsigned int from, unsigned int to) {
+  to = min(to, EEPROM_CAPACITY);
   for (unsigned int address = from; address <= to; address++) {
     Serial.write(read_byte(address));
   }
@@ -452,8 +474,9 @@ void read_binblock(unsigned int from, unsigned int to) {
    @param len      number of bytes to be written
  **/
 void write_block(unsigned int address, byte* buffer, int len) {
-  for (unsigned int i = 0; i < len; i++) {
-    fast_write(address + i, buffer[i]);
+  unsigned int addr = address;
+  for (unsigned int i = address; i < len; i++, addr++) {
+    fast_write(addr, buffer[i]);
   }
 }
 
@@ -509,8 +532,8 @@ void setup() {
 }
 
 /* Read ascii encoded hexadecimal data to the rom
- * the startAddress and dataLength global variables must be set properly beforehand
- */
+   the startAddress and dataLength global variables must be set properly beforehand
+*/
 void readHex() {
   digitalWrite(READ_LED, HIGH);
   Serial.print("beginRead");
@@ -523,8 +546,8 @@ void readHex() {
 }
 
 /* Read binary data from the rom
- * the startAddress and dataLength global variables must be set properly beforehand
- */
+   the startAddress and dataLength global variables must be set properly beforehand
+*/
 void readBin() {
   digitalWrite(READ_LED, HIGH);
   Serial.print("beginRead");
@@ -535,15 +558,15 @@ void readBin() {
 }
 
 /* Write binary data to the rom
- * the startAddress and dataLength global variables must be set properly beforehand
- */
+   the startAddress and dataLength global variables must be set properly beforehand
+*/
 void writeBin() { //TODO: Implement binary write
   writeHex();
 }
 
 /* Write ascii encoded hexadecimal data to the rom
- * the startAddress and dataLength global variables must be set properly beforehand
- */
+   the startAddress and dataLength global variables must be set properly beforehand
+*/
 void writeHex() {
   digitalWrite(WRITE_LED, HIGH);
   Serial.print("beginWrite");
@@ -576,18 +599,27 @@ void loop() {
       set_address_bus(startAddress);
       break;
     case READ_HEX:
-      readHex();
+      if (checkCapacity()) {
+        readHex();
+      }
       break;
     case READ_BIN:
-      readBin();
+      if (checkCapacity()) {
+        readBin();
+      }
       break;
     case WRITE_BIN:
-      writeBin();
+      if (checkCapacity()) {
+        writeBin();
+      }
       break;
 
     case WRITE_HEX:
-      writeHex();
+      if (checkCapacity()) {
+        writeHex();
+      }
       break;
+
     default:
       break;
   }
