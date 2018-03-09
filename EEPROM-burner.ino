@@ -23,7 +23,7 @@
  
 /*
  * There are two formats available: binary and hexadecimal which represents the data as ascii characters
- * The Arduino receives commands from an external controller or master communicating at 2 000 000 bauds via serial 
+ * The Arduino receives commands from an external controller or master communicating at 115200 bauds via serial 
  * Four commands are currently implemented: Read in binary : 'r', Read in hex : 'R', Write in binary : 'w' and Write in hex : 'W'
  * Each command is represented by a string with the following format: ['W' || 'w' || 'R' || 'r'],addr,length
  * The address and length are 4 hexadecimal digits, so to read the 256 first bytes in rom, one would call 'R,0000,00ff'
@@ -33,7 +33,7 @@
  */
 
 #define FORCE_INLINE __attribute__((always_inline))
-
+#define BAUD_RATE 115200
 // 74595 shit registers pins
 #define DS      A0
 #define LATCH   A1
@@ -62,8 +62,6 @@
 #define PORTC_CE   3
 #define PORTC_OE   4
 #define PORTC_WE   5
-
-#define BAUD_RATE 2000000
 
 //a buffer for bytes to burn
 #define BUFFERSIZE 1024

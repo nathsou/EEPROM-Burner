@@ -72,7 +72,7 @@ async function parseCLI(cli) {
 
     try {
         let port = new SerialPort(await getSerialPort(cli), {
-            baudRate: 2000000
+            baudRate: 115200
         });
 
         let eeprom = new Burner(port, err => {
@@ -140,7 +140,7 @@ function ensureOption(option, cli, parser = v => v) {
 
 async function read(eeprom, cli) {
         const addr = await ensureOption('start-address', cli, parseStr),
-        len = await ensureOption('readLength', cli, parseStr),
+        len = await ensureOption('read-length', cli, parseStr),
         file_name = cli['read'];
 
         if (typeof file_name === 'boolean') {

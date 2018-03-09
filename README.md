@@ -6,11 +6,17 @@ This repository provides a node.js CLI to read from and write to an AT28C[16 || 
 
 The address is shifted onto two serial-in / parallel-out 8-bit shift registers (74595) to account for the limited amount of pins available.
 
+## Installation
+
+```console
+$ npm install -g eeprom
+```
+
 ## Pinout
 
 The pinout can be edited directly in the .ino file.
 
-| Pin Name      | Componenet |   Function                | Arduino Pin |
+| Pin Name      | Component |   Function                | Arduino Pin |
 | ------------- |:----------:|:-------------------------:| -----------:|
 | DS            | 74HC595    | Address shift input       | A0          |
 | LATCH         | 74HC595    | Address output enable     | A1          |
@@ -34,7 +40,7 @@ One can read from or read to the EEPROM using a simple node.js CLI.
 
 ## Communication Protocol
 
-This simple protocol uses a baud rate of 2 000 000 (can be modified) to issue commands and send/receive data.
+This simple protocol uses a baud rate of 115 200 (can be modified) to issue commands and send/receive data.
 
 - Four commands are currently implemented: Read in binary : 'r', Read in hex : 'R', Write in binary : 'w' and Write in hex : 'W'
 - Each command is represented by a string with the following format: ['W' || 'w' || 'R' || 'r'],addr,length  
