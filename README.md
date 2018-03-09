@@ -1,6 +1,6 @@
 ## Arduino EEPROM Burner
 
-[!Node CLI](res/cli-demo.gif)
+![Node CLI](res/cli-demo.gif)
 
 This repository provides a node.js CLI to read from and write to an AT28C[16 || 64 || 128 || 256] parallel EEPROM using an Arduino and a simple serial protocol.
 
@@ -24,13 +24,13 @@ The pinout can be edited directly in the .ino file.
 
 My breadboard implementation is quite bushy right now, I'm planning on designing a clean PCB version.
 
-[!BreadBoard circuit](res/breadboard-eeprom-burner.jpg)
+![BreadBoard circuit](res/breadboard-eeprom-burner.jpg)
 
 ##Command Line Interface
 
 One can read from or read to the EEPROM using a simple node.js CLI.
 
-[!CLI Usage](res/cli-usage.png)
+![CLI Usage](res/cli-usage.png)
 
 ##Communication Protocol
 

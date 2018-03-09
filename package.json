@@ -9,6 +9,8 @@
   "keywords": [
     "EEPROM",
     "Arduino",
+    "CLI",
+    "node",
     "AT28C256",
     "AT28C128",
     "AT28C64",
