@@ -1,0 +1,27 @@
+{
+  "name": "eeprom_programmer",
+  "version": "0.0.1",
+  "description": "AT28C256 EEPROM Arduino Programmer with command line and electron  interface",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "EEPROM",
+    "Arduino",
+    "AT28C256",
+    "AT28C128",
+    "AT28C64",
+    "AT28C16",
+    "Programmer"
+  ],
+  "author": "Nathan SOUFFLET",
+  "license": "ISC",
+  "dependencies": {
+    "camelcase": "^4.1.0",
+    "chalk": "^2.3.2",
+    "commander": "^2.15.0",
+    "inquirer": "^5.1.0",
+    "serialport": "^6.1.1"
+  }
+}
