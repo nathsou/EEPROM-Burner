@@ -32,7 +32,7 @@ One can read from or read to the EEPROM using a simple node.js CLI.
 
 ![CLI Usage](res/cli-usage.png)
 
-##Communication Protocol
+## Communication Protocol
 
 This simple protocol uses a baud rate of 2 000 000 (can be modified) to issue commands and send/receive data.
 
