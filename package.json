@@ -2,7 +2,7 @@
   "name": "eeprom",
   "version": "0.0.1",
   "description": "AT28C256 EEPROM Arduino Programmer with command line interface",
-  "main": "src/eeprom.js",
+  "main": "src/eeprom-burner.js",
   "scripts": {
     "test": "-r"
   },
@@ -30,5 +30,9 @@
     "type": "git",
     "url": "git+https://github.com/nathsou/EEPROM-Burner.git"
   },
-  "homepage": "https://github.com/nathsou/EEPROM-Burner#readme"
+  "homepage": "https://github.com/nathsou/EEPROM-Burner#readme",
+  "bin": {
+    "eeprom": "./src/bin/eeprom.js"
+  },
+  "preferGlobal": true
 }
