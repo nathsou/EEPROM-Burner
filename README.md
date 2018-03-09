@@ -6,7 +6,7 @@ This repository provides a node.js CLI to read from and write to an AT28C[16 || 
 
 The address is shifted onto two serial-in / parallel-out 8-bit shift registers (74595) to account for the limited amount of pins available.
 
-### Pinout
+## Pinout
 
 The pinout can be edited directly in the .ino file.
 
@@ -26,7 +26,7 @@ My breadboard implementation is quite bushy right now, I'm planning on designing
 
 ![BreadBoard circuit](res/breadboard-eeprom-burner.jpg)
 
-##Command Line Interface
+## Command Line Interface
 
 One can read from or read to the EEPROM using a simple node.js CLI.
 
