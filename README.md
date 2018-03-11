@@ -42,15 +42,17 @@ One can read from or read to the EEPROM using a simple node.js CLI.
   Options:
 
     -V, --version               output the version number
-    -p, --port [port]           The Arduino's Serial Port
-    -r, --read [file]           Read data from EEPROM into file, prints to stdout if no file provided
-    -w, --write [file]          Write a file to the EEPROM, uses -data if no file provided
-    -b, --bin                   Use binary data, defaults to hexadecimal
-    -f, --fill [number]         fill [start] to [start] + [length] with [number], defaults to 0
+    -p, --port [port]           the Arduino's Serial Port
+    -r, --read [file]           read data from EEPROM into file, prints to stdout if no file provided
+    -w, --write [file]          write a file to the EEPROM, uses -data if no file provided
+    -b, --bin                   use binary data, defaults to hexadecimal
+    -f, --fill-num [num]        fill [start] to [start] + [length] with [num], defaults to 0xff (255)
+    -c, --fill-char [char]      fill [start] to [start] + [length] with [char], defaults to 'a'
     -s, --start-address [addr]  Start address of read or write
-    -l, --length [addr]         Number of bytes to read / fill
-    -d, --data [string]         Data used for a write if no file is provided
-    -v, --verbose               enables logging
+    -l, --length [addr]         number of bytes to read / fill
+    -d, --data [string]         data used for a write if no file is provided
+    -g, --hide-progress         disables the progress-bar
+    -v, --verbose               enable logging
     -h, --help                  output usage information
 ```
 
@@ -58,7 +60,7 @@ One can read from or read to the EEPROM using a simple node.js CLI.
 
 This simple protocol uses a baud rate of 115 200 (can be modified) to issue commands and send/receive data.
 
-- Four commands are currently implemented: Read in binary : 'r', Read in hex : 'R', Write in binary : 'w' and Write in hex : 'W'
+- Five commands are currently implemented: Read in binary : 'r', Read in hex : 'R', Write in binary : 'w', Write in hex : 'W' and Fill with character : 'F'
 - Each command is represented by a string with the following format: ['W' || 'w' || 'R' || 'r'],addr,length  
 - The address and length arguments are 4 ascii encoded hexadecimal digits, so to read the 256 first bytes in rom, one would call 'R,0000,00ff'
 

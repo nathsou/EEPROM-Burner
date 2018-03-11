@@ -1,28 +1,31 @@
 #!/usr/bin/env node
- 
+
 const SerialPort = require('serialport');
-const Burner = require('../lib/burner.js');
+const Burner = require('../lib/Burner.js');
 const cli = require('commander');
 const chalk = require('chalk');
 const inquirer = require('inquirer');
 const camelCase = require('camelcase');
-
+const progress = require('cli-progress');
 
 cli
-  .version('0.0.4')
-  .option('-p, --port [port]', "The Arduino's Serial Port")
-  .option('-r, --read [file]', 'Read data from EEPROM into file, prints to stdout if no file provided')
-  .option('-w, --write [file]', 'Write a file to the EEPROM, uses -data if no file provided')
-  .option('-b, --bin', 'Use binary data, defaults to hexadecimal')
-  .option('-f, --fill [number]', "fill [start] to [start] + [length] with [number], defaults to 0", parseNum)
+  .version('0.0.5')
+  .option('-p, --port [port]', "the Arduino's Serial Port")
+  .option('-r, --read [file]', 'read data from EEPROM into file, prints to stdout if no file provided')
+  .option('-w, --write [file]', 'write a file to the EEPROM, uses -data if no file provided')
+  .option('-b, --bin', 'use binary data, defaults to hexadecimal')
+  .option('-f, --fill-num [num]', "fill [start] to [start] + [length] with [num], defaults to 0xff (255)", parseNum)
+  .option('-c, --fill-char [char]', "fill [start] to [start] + [length] with [char], defaults to 'a'")
   .option('-s, --start-address [addr]', 'Start address of read or write', parseNum)
-  .option('-l, --length [addr]', 'Number of bytes to read / fill', parseNum)
-  .option('-d, --data [string]', 'Data used for a write if no file is provided')
-  .option('-v, --verbose', 'enables logging')
+  .option('-l, --length [addr]', 'number of bytes to read / fill', parseNum)
+  .option('-d, --data [string]', 'data used for a write if no file is provided')
+  .option('-g, --hide-progress', 'disables the progress-bar')
+  .option('-v, --verbose', 'enable logging')
   .parse(process.argv);
 
-parseCLI(cli);
+let progress_bar;
 
+parseCLI(cli);
 //Allows binary, octal, hexadecimal or decimal to be used
 function parseNum(str) {
     const bases = {'0b': 2, '0o': 8, '0x': 16};
@@ -52,21 +55,26 @@ function getSerialPort(cli) {
             inquirer.prompt({
                 type: 'list',
                 message: chalk.underline('Select option ' + getOptionDescription('port', cli)),
-                choices: formated_ports, //On mac the bluetooth port is first
+                choices: formated_ports,
                 name: 'port'
             }).then(ans => {
                 if (ans.port === 'Exit') {
                     reject('No port selected');
                 }
-                resolve(ans.port);
+                resolve(ports[ports.length - formated_ports.indexOf(ans.port) - 1].comName);
             }).catch(err => reject(err));
         }).catch(err => {throw err});
     });
 }
 
+function isDef(option) {
+    const opt = cli[camelCase(option)];
+    return opt !== undefined && opt !== false;
+}
+
 async function parseCLI(cli) {
 
-    if (!cli.read && !cli.write && !cli.fill) {
+    if (!isDef('read') && !isDef('write') && !isDef('fillChar') && !isDef('fillNum')) {
         console.log(chalk.yellow(chalk.bold('No operation to perform, use --help to see usage')));
         return;
     }
@@ -76,13 +84,43 @@ async function parseCLI(cli) {
             baudRate: 115200
         });
 
-        let eeprom = new Burner(port, err => {
-            console.log(chalk.red(chalk.bold(err)));
-            process.exit(1);
-        }, msg => {
-            if (cli.hasOwnProperty('verbose')) {
-                console.log(chalk.blue(msg));
-            }
+        let eeprom = new Burner(port, {
+            on_error: err => {
+                console.log(chalk.red(chalk.bold(err)));
+                process.exit(1);
+            },
+            on_msg: (msg, type) => {
+
+                switch (type) {
+                    case 'progress':
+                        if (isDef('hideProgress')) break;
+                        if (progress_bar === undefined) {
+                            progress_bar = new progress.Bar({
+                                stopOnComplete: true,
+                                format: '[{bar}] {percentage}% | ETA: {eta}s | {bytes_left}'
+                            }, progress.Presets.shades_grey);
+                            progress_bar.start(100, 0, { bytes_left: 'N/A' });
+                        }
+                        progress_bar.update(msg.percentage, {
+                            bytes_left: msg.bytes_left
+                        });
+                        break;
+
+                    case 'stop-progress':
+                        if (progress_bar !== undefined) {
+                            //progress_bar.stop();
+                            //progress_bar = undefined;
+                        }
+                        break;
+
+                    case 'msg':
+                        if (isDef('verbose')) {
+                            console.log(chalk.blue(msg));
+                        }
+                        break;
+                }
+            },
+            send_progress: !isDef('hideProgress')
         });
 
         if (cli.hex) {
@@ -92,11 +130,11 @@ async function parseCLI(cli) {
         }
 
         port.on('open', () => {
-            if (cli.read) {
+            if (isDef('read')) {
                 read(eeprom, cli);
-            } else if (cli.write) {
+            } else if (isDef('write')) {
                 write(eeprom, cli);
-            } else if (cli.fill) {
+            } else if (isDef('fillNum') || isDef('fillChar')) {
                 fill(eeprom, cli);
             }
         });
@@ -126,7 +164,12 @@ function getOptionDescription(option, cli) {
 function ensureOption(option, cli, parser = v => v) {
     option = camelCase(option);
     return new Promise((resolve, reject) => {
-        if (cli.hasOwnProperty(option) && typeof cli[option] !== 'boolean') {
+        if (
+            cli.hasOwnProperty(option) &&
+            typeof cli[option] !== 'boolean' &&
+            cli[option] !== null && 
+            !isNaN(cli[option])
+        ) {
             resolve(cli[option]);
             return;
         }
@@ -170,13 +213,20 @@ async function write(eeprom, cli) {
 }
 
 async function fill(eeprom, cli) {
-    const nb = typeof cli['fill'] === 'number' ? cli['fill'] : 0;
+    let char_or_nb;
+    if (isDef('fillNum')) { //num
+        char_or_nb = (typeof cli['fillNum'] === 'number') ? cli['fillNum'] : 255
+    } else { //char
+        char_or_nb = (typeof cli['fillChar'] === 'string') ? cli['fillChar'][0] : 'a'
+    }
     const addr = await ensureOption('start-address', cli, parseNum),
         len = await ensureOption('length', cli, parseNum);
-    eeprom.fill(addr, len, nb);
+
+    eeprom.fill(addr, len, char_or_nb);
 }
 
 process.on('unhandledRejection', err => { 
-    console.error('Unahndled Rejection: ' + err);
+    console.error('Unhandled Rejection: ' + err);
+    throw err;
     process.exit(1);
-})
+});

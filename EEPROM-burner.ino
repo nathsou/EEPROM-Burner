@@ -36,6 +36,8 @@
 
 #define EEPROM_CAPACITY 32768 //bytes -> AT28C256, change according to your chip
 #define BAUD_RATE 115200
+#define PROGRESS_TICKS 50
+#define BUFFER_SIZE 1024
 
 
 #define FORCE_INLINE __attribute__((always_inline))
@@ -70,14 +72,15 @@
 #define PORTC_WE   5
 
 //a buffer for bytes to burn
-#define BUFFERSIZE 1024
-byte buffer[BUFFERSIZE];
+byte buffer[BUFFER_SIZE];
 //command buffer for parsing commands
 #define COMMANDSIZE 32
 char cmdbuf[COMMANDSIZE];
 
-unsigned int startAddress, endAddress;
-unsigned int lineLength, dataLength;
+//global variables
+unsigned int start_address, end_address;
+unsigned int line_length, data_length;
+bool send_progress = false;
 
 //define COMMANDS
 #define NOCOMMAND    0
@@ -91,6 +94,8 @@ unsigned int lineLength, dataLength;
 #define WRITE_HEX   20
 #define WRITE_BIN   21
 #define WRITE_ITL   22
+#define FILL_CHAR   23
+#define FILL_NUM    24
 
 #define READ_LED 11
 #define WRITE_LED 12
@@ -276,7 +281,7 @@ void fast_write(unsigned int address, byte data) {
 
   set_oe(LOW);
 
-  while (data != read_data_bus()) {
+  while (data != read_data_bus()) { //Polling (see datasheet)
     cyclecount++;
   };
 
@@ -316,60 +321,60 @@ void readCommand() {
 //parse the given command by separating command character and parameters
 //at the moment only 5 commands are supported
 
-byte parseCommand() {
+byte parseCommand() { //e.g \0F,0000,7fff,03,1
+                      //cmd,start_address,data-length,fill,send-progress
 
   //set ',' to '\0' terminator (command string has a fixed strucure)
   //first string is the command character
-  cmdbuf[1]  = 0;
+  cmdbuf[2]  = 0;
   //second string is start address (4 bytes)
-  cmdbuf[6]  = 0;
+  cmdbuf[7]  = 0;
   //third string is data length (4 bytes)
-  cmdbuf[11] = 0;
-  //fourth string is line length (2 bytes)
-  cmdbuf[14] = 0;
-  startAddress = hexWord(cmdbuf + 2);
-  dataLength = hexWord(cmdbuf + 7);
-  lineLength = 16; hexByte(cmdbuf + 12);
-  byte retval = 0;
-  switch (cmdbuf[0]) {
+  cmdbuf[12] = 0;
+  
+  start_address = hexWord(cmdbuf + 3);
+  data_length = hexWord(cmdbuf + 8);
+  line_length = 16;
+  send_progress = cmdbuf[16] == '1';
+
+  switch (cmdbuf[1]) {
     case 'A':
-      retval = SET_ADDRESS;
-      break;
+      return SET_ADDRESS;
     case 'R':
-      retval = READ_HEX;
-      break;
+      return READ_HEX;
     case 'r':
-      retval = READ_BIN;
-      break;
+      return READ_BIN;
     case 'W':
-      retval = WRITE_HEX;
-      break;
+      return WRITE_HEX;
     case 'w':
-      retval = WRITE_BIN;
-      break;
-    default:
-      retval = NOCOMMAND;
-      break;
+      return WRITE_BIN;
+    case 'F':
+      return FILL_CHAR;
+    case 'f':
+      return FILL_NUM; 
   }
 
-  return retval;
+  return NOCOMMAND;
+}
+
+//send an error message
+void sendError(String msg) {
+    Serial.print("beginError");
+    Serial.write('\0');
+    Serial.print(msg);
+    Serial.write('%');
 }
 
 /*
  * Check the requested data can be accessed
- * global variables startAddress and dataLength must be set beforehand 
+ * global variables start_address and data_length must be set beforehand 
  */
 
-boolean checkCapacity() {
-  if (startAddress + dataLength > EEPROM_CAPACITY -1) {
-    //send an error message
-    Serial.print("beginError");
-    Serial.write('\0');
-    Serial.print("Boundary Error: Cannot access byte at address " + String(startAddress + dataLength) + " on a " + String(EEPROM_CAPACITY) + " EEPROM chip");
-    Serial.write('%');
+bool checkCapacity() {
+  if (start_address + data_length > EEPROM_CAPACITY - 1) {
+    sendError("Boundary Error: Cannot access byte at address " + String(start_address + data_length) + " on a " + String(EEPROM_CAPACITY) + " bytes EEPROM chip");
     return false;
   }
-
   return true;
 }
 
@@ -426,27 +431,26 @@ unsigned int hexWord(char* data) {
    of the data to serial connection
    @param from       start address to read fromm
    @param to         last address to read from
-   @param linelength how many hex values are written in one line
+   @param line_length how many hex values are written in one line
  **/
-void read_block(unsigned int address, unsigned int dataLength, int linelength) {
+void read_block(unsigned int address, unsigned int data_length, int line_length) {
   //Serial.println("from: " + String(from) + ", to: " + String(to));
   //count the number fo values that are already printed out on the
   //current line
   int outcount = 0;
   //loop from "from address" to "to address" (included)
-  unsigned int end_address = min(address + dataLength, EEPROM_CAPACITY);
+  unsigned int end_address = min(address + data_length, EEPROM_CAPACITY);
   for (unsigned int addr = address; addr < end_address; addr++) {
     if (outcount == 0) {
       //print out the address at the beginning of the line
       Serial.println();
-      Serial.print("0x");
       printAddress(addr);
-      Serial.print(" : ");
+      Serial.print(' ');
     }
     //print data, separated by a space
     printByte(read_byte(addr));
-    Serial.print(" ");
-    outcount = (++outcount % linelength);
+    Serial.print(' ');
+    outcount = (++outcount % line_length);
 
   }
   //print a newline after the last data line
@@ -469,13 +473,15 @@ void read_binblock(unsigned int from, unsigned int to) {
 
 /**
    write a data block to the eeprom
-   @param address  startaddress to write on eeprom
+   @param address  start_address to write on eeprom
    @param buffer   data buffer to get the data from
    @param len      number of bytes to be written
  **/
 void write_block(unsigned int address, byte* buffer, int len) {
   unsigned int addr = address;
-  for (unsigned int i = address; i < len; i++, addr++) {
+  unsigned int end_address = address + len;
+  for (unsigned int i = address; i < end_address; i++, addr++) {
+    updateProgress(addr);
     fast_write(addr, buffer[i]);
   }
 }
@@ -489,7 +495,6 @@ void printAddress(unsigned int address) {
   if (address < 0x0100) Serial.print("0");
   if (address < 0x1000) Serial.print("0");
   Serial.print(address, HEX);
-
 }
 
 /**
@@ -529,56 +534,120 @@ void setup() {
 
   //set speed of serial connection
   Serial.begin(BAUD_RATE);
+
+  //read_binblock(0, 1024 * 27, 16);
 }
 
 /* Read ascii encoded hexadecimal data to the rom
-   the startAddress and dataLength global variables must be set properly beforehand
+   the start_address and data_length global variables must be set properly beforehand
 */
 void readHex() {
   digitalWrite(READ_LED, HIGH);
   Serial.print("beginRead");
   Serial.write('\0');
   //set a default if needed to prevent infinite loop
-  if (lineLength == 0) lineLength = 32;
-  read_block(startAddress, dataLength, lineLength);
+  if (line_length == 0) line_length = 32;
+  read_block(start_address, data_length, line_length);
   digitalWrite(READ_LED, LOW);
-  Serial.write('%');
+  Serial.print("%\0");
+}
+
+void sendBuffer() {
+  digitalWrite(READ_LED, HIGH);
+  Serial.print("beginRead");
+  Serial.write('\0');
+  //set a default if needed to prevent infinite loop
+  for (unsigned int i = 0; i < BUFFER_SIZE; i++) {
+    Serial.write(buffer[i]);
+  }
+  digitalWrite(READ_LED, LOW);
+  Serial.print("%\0");
 }
 
 /* Read binary data from the rom
-   the startAddress and dataLength global variables must be set properly beforehand
+   the start_address and data_length global variables must be set properly beforehand
 */
 void readBin() {
   digitalWrite(READ_LED, HIGH);
   Serial.print("beginRead");
   Serial.write('\0');
-  read_binblock(startAddress, dataLength);
+  read_binblock(start_address, data_length);
   digitalWrite(READ_LED, LOW);
-  Serial.write('%');
+  Serial.print("%\0");
 }
 
 /* Write binary data to the rom
-   the startAddress and dataLength global variables must be set properly beforehand
+   the start_address and data_length global variables must be set properly beforehand
 */
 void writeBin() { //TODO: Implement binary write
   writeHex();
 }
 
+void sendMessage(String msg) {
+  Serial.print("beginRead");
+  Serial.write('\0');
+  Serial.print(msg);
+  Serial.print("%\0");
+}
+
 /* Write ascii encoded hexadecimal data to the rom
-   the startAddress and dataLength global variables must be set properly beforehand
+   the start_address and data_length global variables must be set properly beforehand
 */
 void writeHex() {
   digitalWrite(WRITE_LED, HIGH);
   Serial.print("beginWrite");
   Serial.write('\0');
-  int bytes_left;
-  while (dataLength > 0) {
-    bytes_left = min(dataLength, BUFFERSIZE);
+  unsigned int bytes_left;
+  while (data_length > 0) {
+    bytes_left = min(data_length, BUFFER_SIZE);
     Serial.readBytes(buffer, bytes_left);
-    write_block(startAddress, buffer, dataLength);
-    dataLength -= bytes_left;
+    write_block(start_address, buffer, bytes_left);
+    data_length -= bytes_left;
   }
-  Serial.write('%');
+  //tell the master write is complete
+  Serial.print("%\0");
+  //turn off the write status LED
+  digitalWrite(WRITE_LED, LOW);
+  Serial.end();
+  Serial.begin(BAUD_RATE);
+}
+
+void updateProgress(unsigned int addr) {
+    #ifdef PROGRESS_TICKS
+      if (send_progress && (addr % PROGRESS_TICKS == 0)) {
+        Serial.print("beginProgress");
+        Serial.write('\0');
+        Serial.print(addr);
+        Serial.write('%');
+    #endif
+  }
+}
+
+//TODO: Implement fillNum
+
+void fillNum(unsigned short n) {
+  digitalWrite(WRITE_LED, HIGH);
+  Serial.print("beginFill");
+  Serial.write('\0');
+  const unsigned int end_address = start_address + data_length;
+  for (unsigned int addr = start_address; addr < end_address; addr++) {
+    updateProgress(addr);
+    fast_write(addr, n);
+  }
+  Serial.print("%\0");
+  digitalWrite(WRITE_LED, LOW);
+}
+
+void fillChar(char c) {
+  digitalWrite(WRITE_LED, HIGH);
+  Serial.print("beginFill");
+  Serial.write('\0');
+  const unsigned int end_address = start_address + data_length;
+  for (unsigned int addr = start_address; addr < end_address; addr++) {
+    updateProgress(addr);
+    fast_write(addr, c);
+  }
+  Serial.print("%\0");
   digitalWrite(WRITE_LED, LOW);
 }
 
@@ -588,6 +657,7 @@ void writeHex() {
  **/
 void loop() {
   readCommand();
+  if (cmdbuf[0] != '\0') { return; }
   byte cmd = parseCommand();
   switch (cmd) {
     case SET_ADDRESS:
@@ -596,7 +666,7 @@ void loop() {
       // e.g. A,00FF
       Serial.print("Setting address bus to 0x");
       Serial.println(cmdbuf + 2);
-      set_address_bus(startAddress);
+      set_address_bus(start_address);
       break;
     case READ_HEX:
       if (checkCapacity()) {
@@ -620,11 +690,22 @@ void loop() {
       }
       break;
 
+    case FILL_CHAR:
+      if (checkCapacity()) {
+        fillChar(cmdbuf[14]);
+      }
+      break;
+
+    case FILL_NUM:
+      if (checkCapacity()) {
+        //convert char to ushort
+        fillChar(hexByte(cmdbuf + 13));
+      }
+      break;
+
     default:
       break;
   }
-
-
 }
 
 

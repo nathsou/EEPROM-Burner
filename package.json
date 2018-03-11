@@ -1,6 +1,6 @@
 {
   "name": "eeprom",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "AT28C256 EEPROM Arduino Programmer with command line interface",
   "main": "src/eeprom-burner.js",
   "scripts": {
@@ -22,6 +22,7 @@
   "dependencies": {
     "camelcase": "^4.1.0",
     "chalk": "^2.3.2",
+    "cli-progress": "^1.8.0",
     "commander": "^2.15.0",
     "inquirer": "^5.1.0",
     "serialport": "^6.1.1"

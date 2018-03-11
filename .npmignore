@@ -1,0 +1,5 @@
+.npmignore
+.DS_Store
+res
+.git
+.vscode
