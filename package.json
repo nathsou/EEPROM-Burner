@@ -4,7 +4,7 @@
   "description": "AT28C256 EEPROM Arduino Programmer with command line interface",
   "main": "src/eeprom-burner.js",
   "scripts": {
-    "test": "-r"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
     "EEPROM",
