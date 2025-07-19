@@ -1,6 +1,6 @@
 {
   "name": "eeprom",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "AT28C256 EEPROM Arduino Programmer with command line interface",
   "main": "src/eeprom-burner.js",
   "scripts": {
@@ -20,16 +20,19 @@
   "author": "Nathan SOUFFLET",
   "license": "MIT",
   "dependencies": {
-    "camelcase": "^4.1.0",
-    "chalk": "^2.3.2",
-    "cli-progress": "^1.8.0",
-    "commander": "^2.15.0",
-    "inquirer": "^5.1.0",
-    "serialport": "^6.1.1"
+    "camelcase": "^8.0.0",
+    "chalk": "^4.1.2",
+    "cli-progress": "^3.12.0",
+    "commander": "^14.0.0",
+    "inquirer": "^12.7.0",
+    "serialport": "^13.0.0"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nathsou/EEPROM-Burner.git"
+  },
+  "engines": {
+    "node": ">=16.0.0"
   },
   "homepage": "https://github.com/nathsou/EEPROM-Burner#readme",
   "bin": {

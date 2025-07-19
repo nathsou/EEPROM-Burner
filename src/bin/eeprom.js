@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 
-const SerialPort = require('serialport');
-const Burner = require('../lib/Burner.js');
-const cli = require('commander');
+const { SerialPort } = require('serialport');
+const Burner = require('../lib/burner.js');
+const { program } = require('commander');
 const chalk = require('chalk');
-const inquirer = require('inquirer');
-const camelCase = require('camelcase');
+const inquirer = require('inquirer').default || require('inquirer');
+const camelCaseLib = require('camelcase');
+const camelCase = camelCaseLib.default || camelCaseLib;
 const progress = require('cli-progress');
 
-cli
+program
   .version('0.0.5')
   .option('-p, --port [port]', "the Arduino's Serial Port")
   .option('-r, --read [file]', 'read data from EEPROM into file, prints to stdout if no file provided')
@@ -24,8 +25,9 @@ cli
   .parse(process.argv);
 
 let progress_bar;
+const options = program.opts();
 
-parseCLI(cli);
+parseCLI(options);
 //Allows binary, octal, hexadecimal or decimal to be used
 function parseNum(str) {
     const bases = {'0b': 2, '0o': 8, '0x': 16};
@@ -34,10 +36,10 @@ function parseNum(str) {
     return parseInt(str, prefix in bases ? bases[prefix] : 10);
 }
 
-function getSerialPort(cli) {
+function getSerialPort(options) {
     return new Promise((resolve, reject) => {
-        if (cli.hasOwnProperty('port')) {
-            resolve(cli.port);
+        if (options.hasOwnProperty('port')) {
+            resolve(options.port);
             return;
         }
     
@@ -48,31 +50,31 @@ function getSerialPort(cli) {
             let formated_ports = [];
             for (let i = ports.length - 1; i >= 0; i--) {
                 let port = ports[i];
-                formated_ports.push(`${port.comName}${port.manufacturer !== undefined ? ' [' + port.manufacturer + ']' : ''}`);
+                formated_ports.push(`${port.path}${port.manufacturer !== undefined ? ' [' + port.manufacturer + ']' : ''}`);
             }
             formated_ports.push('Exit');
 
             inquirer.prompt({
                 type: 'list',
-                message: chalk.underline('Select option ' + getOptionDescription('port', cli)),
+                message: chalk.underline('Select option ' + getOptionDescription('port', program)),
                 choices: formated_ports,
                 name: 'port'
             }).then(ans => {
                 if (ans.port === 'Exit') {
                     reject('No port selected');
                 }
-                resolve(ports[ports.length - formated_ports.indexOf(ans.port) - 1].comName);
+                resolve(ports[ports.length - formated_ports.indexOf(ans.port) - 1].path);
             }).catch(err => reject(err));
         }).catch(err => {throw err});
     });
 }
 
 function isDef(option) {
-    const opt = cli[camelCase(option)];
+    const opt = options[camelCase(option)];
     return opt !== undefined && opt !== false;
 }
 
-async function parseCLI(cli) {
+async function parseCLI(options) {
 
     if (!isDef('read') && !isDef('write') && !isDef('fillChar') && !isDef('fillNum')) {
         console.log(chalk.yellow(chalk.bold('No operation to perform, use --help to see usage')));
@@ -80,7 +82,8 @@ async function parseCLI(cli) {
     }
 
     try {
-        let port = new SerialPort(await getSerialPort(cli), {
+        let port = new SerialPort({
+            path: await getSerialPort(options),
             baudRate: 115200
         });
 
@@ -123,19 +126,19 @@ async function parseCLI(cli) {
             send_progress: !isDef('hideProgress')
         });
 
-        if (cli.hex) {
+        if (options.hex) {
             eeprom.useHexadecimal();
-        } else if (cli.bin) {
+        } else if (options.bin) {
             eeprom.useBinary();
         }
 
         port.on('open', () => {
             if (isDef('read')) {
-                read(eeprom, cli);
+                read(eeprom, options);
             } else if (isDef('write')) {
-                write(eeprom, cli);
+                write(eeprom, options);
             } else if (isDef('fillNum') || isDef('fillChar')) {
-                fill(eeprom, cli);
+                fill(eeprom, options);
             }
         });
     } catch (err) {
@@ -144,9 +147,9 @@ async function parseCLI(cli) {
 
 }
 
-function getOption(option, cli) {
+function getOption(option, program) {
     option = camelCase(option);
-    for (let opt of cli.options) {
+    for (let opt of program.options) {
         if (camelCase(opt.long) === option) {
             return opt;
         }
@@ -155,41 +158,41 @@ function getOption(option, cli) {
     return null;
 }
 
-function getOptionDescription(option, cli) {
-    const opt = getOption(option, cli);
+function getOptionDescription(option, program) {
+    const opt = getOption(option, program);
     return `${opt.long} [${opt.short}] : ${opt.description}`;
 }
 
 //ensures that [option] is defined (if not provided, we ask the user to enter it explicitly)
-function ensureOption(option, cli, parser = v => v) {
+function ensureOption(option, options, parser = v => v) {
     option = camelCase(option);
     return new Promise((resolve, reject) => {
         if (
-            cli.hasOwnProperty(option) &&
-            typeof cli[option] !== 'boolean' &&
-            cli[option] !== null && 
-            !isNaN(cli[option])
+            options.hasOwnProperty(option) &&
+            typeof options[option] !== 'boolean' &&
+            options[option] !== null && 
+            !isNaN(options[option])
         ) {
-            resolve(cli[option]);
+            resolve(options[option]);
             return;
         }
 
-        const opt = getOption(option, cli);
+        const opt = getOption(option, program);
 
         inquirer.prompt({
             type: 'input',
             name: 'value',
-            message: `Enter a value for ${getOptionDescription(option, cli)} :`
+            message: `Enter a value for ${getOptionDescription(option, program)} :`
         }).then(v => {
             resolve(parser.call(null, v.value));
         }).catch(err => reject(err));
     })
 }
 
-async function read(eeprom, cli) {
-        const addr = await ensureOption('start-address', cli, parseNum),
-            len = await ensureOption('length', cli, parseNum),
-        file_name = cli['read'];
+async function read(eeprom, options) {
+        const addr = await ensureOption('start-address', options, parseNum),
+            len = await ensureOption('length', options, parseNum),
+        file_name = options['read'];
 
         if (typeof file_name === 'boolean') {
         eeprom.read(addr, len, data => {
@@ -200,27 +203,27 @@ async function read(eeprom, cli) {
     }
 }
 
-async function write(eeprom, cli) {
-    const addr = await ensureOption('start-address', cli, parseNum),
-        file_name = cli['write'];
+async function write(eeprom, options) {
+    const addr = await ensureOption('start-address', options, parseNum),
+        file_name = options['write'];
 
     if (typeof file_name === 'boolean') {
-        const data = await ensureOption('data', cli);
+        const data = await ensureOption('data', program);
         eeprom.writeBuffer(addr, Buffer.from(data));
     } else {
         eeprom.writeFile(addr, file_name);
     }
 }
 
-async function fill(eeprom, cli) {
+async function fill(eeprom, options) {
     let char_or_nb;
     if (isDef('fillNum')) { //num
-        char_or_nb = (typeof cli['fillNum'] === 'number') ? cli['fillNum'] : 255
+        char_or_nb = (typeof options['fillNum'] === 'number') ? options['fillNum'] : 255
     } else { //char
-        char_or_nb = (typeof cli['fillChar'] === 'string') ? cli['fillChar'][0] : 'a'
+        char_or_nb = (typeof options['fillChar'] === 'string') ? options['fillChar'][0] : 'a'
     }
-    const addr = await ensureOption('start-address', cli, parseNum),
-        len = await ensureOption('length', cli, parseNum);
+    const addr = await ensureOption('start-address', options, parseNum),
+        len = await ensureOption('length', options, parseNum);
 
     eeprom.fill(addr, len, char_or_nb);
 }
